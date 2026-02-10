@@ -6,7 +6,6 @@ import {
   type LanguageModelUsage,
 } from "ai";
 import { nanoid } from "nanoid";
-import { after } from "next/server";
 import { webAgent } from "@/app/config";
 import type { WebAgentUIMessage } from "@/app/types";
 import {
@@ -286,7 +285,6 @@ export async function POST(req: Request) {
                 kickSandboxLifecycleWorkflow({
                   sessionId,
                   reason: "chat-finished",
-                  scheduleBackgroundWork: (cb) => after(cb),
                 });
                 return;
               }
@@ -300,7 +298,6 @@ export async function POST(req: Request) {
             kickSandboxLifecycleWorkflow({
               sessionId,
               reason: "chat-finished",
-              scheduleBackgroundWork: (cb) => after(cb),
             });
           } catch (error) {
             console.error("Failed to persist sandbox state:", error);
