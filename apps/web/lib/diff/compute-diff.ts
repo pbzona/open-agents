@@ -19,6 +19,8 @@ export type DiffFile = {
   additions: number;
   deletions: number;
   diff: string;
+  /** Diff of only uncommitted (local) changes vs HEAD. Present when the file has local modifications. */
+  localDiff?: string;
   oldPath?: string;
   /** True for generated/lock files whose diff content is intentionally omitted. */
   generated?: boolean;
@@ -323,6 +325,25 @@ export async function computeAndCacheDiff(params: {
     if (!entry) continue;
     totalAdditions += entry.lineCount;
     files.push(entry.file);
+  }
+
+  // Fetch local-only diffs (uncommitted changes vs HEAD) for files with
+  // local modifications. This runs `git diff HEAD -- <file>` sequentially
+  // for each file that has unstaged or partially staged changes.
+  for (const file of files) {
+    if (
+      !file.generated &&
+      (file.stagingStatus === "unstaged" || file.stagingStatus === "partial")
+    ) {
+      const localResult = await sandbox.exec(
+        `git diff HEAD -- ${JSON.stringify(file.path)}`,
+        cwd,
+        30000,
+      );
+      if (localResult.success && localResult.stdout.trim()) {
+        file.localDiff = localResult.stdout.trim();
+      }
+    }
   }
 
   // Sort files: modified first, then added, then renamed, then deleted

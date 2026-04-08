@@ -276,16 +276,20 @@ export function DiffTabView() {
               );
             }
 
+            // In local scope, prefer the localDiff (uncommitted changes vs HEAD)
+            const patchContent =
+              isLocalScope && file.localDiff ? file.localDiff : file.diff;
+
             return (
               <div>
                 {file.generated ? (
                   <div className="px-4 py-6 text-center text-xs text-muted-foreground">
                     Generated file — diff content hidden
                   </div>
-                ) : file.diff ? (
+                ) : patchContent ? (
                   <PatchDiff
-                    key={`${file.path}-${diffStyle}`}
-                    patch={file.diff}
+                    key={`${file.path}-${diffStyle}-${diffScope}`}
+                    patch={patchContent}
                     options={
                       shouldWrapDiffContent(file.path)
                         ? { ...baseOptions, overflow: "wrap" as const }
