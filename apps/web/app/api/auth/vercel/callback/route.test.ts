@@ -62,6 +62,9 @@ const originalEnv = {
   VERCEL_APP_CLIENT_SECRET: process.env.VERCEL_APP_CLIENT_SECRET,
   VERCEL_GIT_REPO_OWNER: process.env.VERCEL_GIT_REPO_OWNER,
   VERCEL_GIT_REPO_SLUG: process.env.VERCEL_GIT_REPO_SLUG,
+  VERCEL_PROJECT_PRODUCTION_URL: process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL:
+    process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL,
   NODE_ENV: process.env.NODE_ENV,
 };
 
@@ -91,6 +94,8 @@ beforeEach(() => {
     VERCEL_APP_CLIENT_SECRET: "client-secret",
     VERCEL_GIT_REPO_OWNER: "vercel-labs",
     VERCEL_GIT_REPO_SLUG: "open-harness",
+    VERCEL_PROJECT_PRODUCTION_URL: "",
+    NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL: "",
     NODE_ENV: "test",
   });
 });
@@ -102,6 +107,9 @@ afterEach(() => {
     VERCEL_APP_CLIENT_SECRET: originalEnv.VERCEL_APP_CLIENT_SECRET,
     VERCEL_GIT_REPO_OWNER: originalEnv.VERCEL_GIT_REPO_OWNER,
     VERCEL_GIT_REPO_SLUG: originalEnv.VERCEL_GIT_REPO_SLUG,
+    VERCEL_PROJECT_PRODUCTION_URL: originalEnv.VERCEL_PROJECT_PRODUCTION_URL,
+    NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL:
+      originalEnv.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL,
     NODE_ENV: originalEnv.NODE_ENV,
   });
 });
@@ -117,11 +125,11 @@ describe("GET /api/auth/vercel/callback", () => {
     });
 
     const { GET } = await routeModulePromise;
-    const response = await GET(createRequest());
+    const response = await GET(createRequest("https://openharness.dev"));
 
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(
-      "https://open-harness.example/deploy-your-own",
+      "https://openharness.dev/deploy-your-own",
     );
     expect(upsertUserMock).not.toHaveBeenCalled();
     expect(deletedCookies).toEqual([
@@ -129,6 +137,21 @@ describe("GET /api/auth/vercel/callback", () => {
       "vercel_code_verifier",
       "vercel_auth_redirect_to",
     ]);
+  });
+
+  test("redirects non-Vercel emails on preview hosts for the managed deployment", async () => {
+    process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL = "openharness.dev";
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(
+      createRequest("https://preview-feature.vercel.app"),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "https://preview-feature.vercel.app/deploy-your-own",
+    );
+    expect(upsertUserMock).not.toHaveBeenCalled();
   });
 
   test("allows non-Vercel emails on self-hosted deployments", async () => {

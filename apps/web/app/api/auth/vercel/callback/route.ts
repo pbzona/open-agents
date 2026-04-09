@@ -8,8 +8,11 @@ import { exchangeVercelCode, getVercelUserInfo } from "@/lib/vercel/oauth";
 
 const ALLOWED_VERCEL_EMAIL_DOMAIN = "vercel.com";
 const DEPLOY_YOUR_OWN_PATH = "/deploy-your-own";
-const MANAGED_TEMPLATE_REPO_OWNER = "vercel-labs";
-const MANAGED_TEMPLATE_REPO_SLUG = "open-harness";
+const MANAGED_TEMPLATE_HOSTS = new Set([
+  "openharness.dev",
+  "www.openharness.dev",
+  "preview-openharness.vercel.app",
+]);
 
 function clearVercelOauthCookies(store: Awaited<ReturnType<typeof cookies>>) {
   store.delete("vercel_auth_state");
@@ -17,11 +20,36 @@ function clearVercelOauthCookies(store: Awaited<ReturnType<typeof cookies>>) {
   store.delete("vercel_auth_redirect_to");
 }
 
-function isManagedTemplateDeployment() {
-  return (
-    process.env.VERCEL_GIT_REPO_OWNER === MANAGED_TEMPLATE_REPO_OWNER &&
-    process.env.VERCEL_GIT_REPO_SLUG === MANAGED_TEMPLATE_REPO_SLUG
-  );
+function normalizeHost(value?: string) {
+  const normalizedValue = value?.trim().toLowerCase();
+  if (!normalizedValue) {
+    return null;
+  }
+
+  try {
+    return new URL(
+      normalizedValue.startsWith("http://") ||
+        normalizedValue.startsWith("https://")
+        ? normalizedValue
+        : `https://${normalizedValue}`,
+    ).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function isManagedTemplateDeployment(req: NextRequest) {
+  const requestHost = req.nextUrl.hostname.toLowerCase();
+  if (MANAGED_TEMPLATE_HOSTS.has(requestHost)) {
+    return true;
+  }
+
+  return [
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL,
+  ]
+    .map((value) => normalizeHost(value))
+    .some((host) => host !== null && MANAGED_TEMPLATE_HOSTS.has(host));
 }
 
 function hasAllowedEmailDomain(email?: string) {
@@ -74,7 +102,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const userInfo = await getVercelUserInfo(tokens.access_token);
 
     if (
-      isManagedTemplateDeployment() &&
+      isManagedTemplateDeployment(req) &&
       !hasAllowedEmailDomain(userInfo.email)
     ) {
       clearVercelOauthCookies(cookieStore);
