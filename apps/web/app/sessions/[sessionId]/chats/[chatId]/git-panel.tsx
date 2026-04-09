@@ -1380,6 +1380,7 @@ export function GitPanel(props: GitPanelProps) {
   const showGitTab =
     hasExistingPr ||
     (gitStatus !== null && hasDiff && !hasUncommittedGitChanges);
+  const showCreatePrShortcut = hasRepo && !hasExistingPr && showGitTab;
   const isRefreshingChanges = diffRefreshing || gitStatusLoading;
 
   return (
@@ -1574,20 +1575,33 @@ export function GitPanel(props: GitPanelProps) {
                     0,
                   );
                   return (
-                    <div className="mb-2 flex items-center gap-2 px-2 text-xs text-muted-foreground">
-                      <span>
-                        {visibleFiles.length} file
-                        {visibleFiles.length !== 1 ? "s" : ""} changed
-                      </span>
-                      {adds > 0 && (
-                        <span className="text-green-600 dark:text-green-500">
-                          +{adds}
+                    <div className="mb-2 flex items-center justify-between gap-2 px-2">
+                      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                        <span>
+                          {visibleFiles.length} file
+                          {visibleFiles.length !== 1 ? "s" : ""} changed
                         </span>
-                      )}
-                      {dels > 0 && (
-                        <span className="text-red-600 dark:text-red-400">
-                          -{dels}
-                        </span>
+                        {adds > 0 && (
+                          <span className="text-green-600 dark:text-green-500">
+                            +{adds}
+                          </span>
+                        )}
+                        {dels > 0 && (
+                          <span className="text-red-600 dark:text-red-400">
+                            -{dels}
+                          </span>
+                        )}
+                      </div>
+                      {showCreatePrShortcut && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 shrink-0 text-xs"
+                          onClick={() => setGitPanelTab("pr")}
+                        >
+                          <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
+                          Create PR
+                        </Button>
                       )}
                     </div>
                   );
