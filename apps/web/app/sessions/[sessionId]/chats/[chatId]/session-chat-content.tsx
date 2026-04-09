@@ -119,7 +119,6 @@ import { useStreamRecovery } from "./hooks/use-stream-recovery";
 import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
 import { useCodeEditor } from "./hooks/use-code-editor";
 import { useDevServer } from "./hooks/use-dev-server";
-
 import { useGitPanel } from "./git-panel-context";
 import { GitPanel } from "./git-panel";
 import {
@@ -886,6 +885,7 @@ export function SessionChatContent({
     setShareRequested,
     setHasActionNeeded,
     setChangesCount,
+    setHasCommittedChanges,
     panelPortalRef,
     headerActionsRef,
   } = useGitPanel();
@@ -1043,8 +1043,10 @@ export function SessionChatContent({
   const {
     sandboxInfo,
     diff,
+    diffRefreshing,
     refreshDiff,
     gitStatus,
+    gitStatusLoading,
     refreshGitStatus,
     files,
     filesLoading,
@@ -2661,6 +2663,13 @@ export function SessionChatContent({
   useEffect(() => {
     setChangesCount(totalChangesCount);
   }, [totalChangesCount, setChangesCount]);
+
+  // Sync the "committed changes" indicator (blue dot) — branch has diverged
+  // and there are no uncommitted changes left to deal with
+  const hasDiffData = Boolean(diff || session.cachedDiff);
+  useEffect(() => {
+    setHasCommittedChanges(hasRepo && hasDiffData && !hasUncommittedGitChanges);
+  }, [hasRepo, hasDiffData, hasUncommittedGitChanges, setHasCommittedChanges]);
   const hasOpenPr = hasExistingPr && session.prStatus === "open";
   const canCloseAndArchive = hasOpenPr && !isArchived;
   const handleCommitted = useCallback(async () => {
@@ -2763,13 +2772,16 @@ export function SessionChatContent({
       canCloseAndArchive={canCloseAndArchive}
       diffFiles={diff?.files ?? null}
       diffSummary={diff?.summary ?? null}
+      diffRefreshing={diffRefreshing}
       onCreateRepoClick={() => setRepoDialogOpen(true)}
+      refreshDiff={refreshDiff}
       onMerged={handleMerged}
       onCloseAndArchiveClick={() => setCloseDialogOpen(true)}
       onFixChecks={handleFixChecks}
       onFixConflicts={(baseBranchRef) => handleFixConflicts(baseBranchRef)}
       hasSandbox={sandboxInfo !== null}
       gitStatus={gitStatus}
+      gitStatusLoading={gitStatusLoading}
       refreshGitStatus={refreshGitStatus}
       onCommitted={handleCommitted}
       isAgentWorking={hasPendingResponse || isChatInFlight}
