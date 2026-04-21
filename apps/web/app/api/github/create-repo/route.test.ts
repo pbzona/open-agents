@@ -80,7 +80,7 @@ mock.module("@/lib/sandbox/utils", () => ({
   isSandboxActive: () => sandboxActive,
 }));
 
-mock.module("@open-harness/sandbox", () => ({
+mock.module("@open-agents/sandbox", () => ({
   connectSandbox: async (state: unknown) => {
     connectStates.push(state);
     return {

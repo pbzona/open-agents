@@ -1,11 +1,11 @@
 import { checkBotId } from "botid/server";
-import { botIdConfig } from "@/lib/botid";
-import { connectSandbox, type SandboxState } from "@open-harness/sandbox";
+import { connectSandbox, type SandboxState } from "@open-agents/sandbox";
 import {
   requireAuthenticatedUser,
   requireOwnedSession,
   type SessionRecord,
 } from "@/app/api/sessions/_lib/session-context";
+import { botIdConfig } from "@/lib/botid";
 import { getGitHubUserProfile, getUserGitHubToken } from "@/lib/github/token";
 import { updateSession } from "@/lib/db/sessions";
 import { parseGitHubUrl } from "@/lib/github/client";

@@ -3,6 +3,10 @@ import { DEFAULT_SANDBOX_TIMEOUT_MS } from "@/lib/sandbox/config";
 
 mock.module("server-only", () => ({}));
 
+mock.module("botid/server", () => ({
+  checkBotId: async () => ({ isBot: false }),
+}));
+
 interface TestSessionRecord {
   id: string;
   userId: string;
@@ -117,7 +121,7 @@ mock.module("@/lib/sandbox/lifecycle-kick", () => ({
   },
 }));
 
-mock.module("@open-harness/sandbox", () => ({
+mock.module("@open-agents/sandbox", () => ({
   connectSandbox: async (config: ConnectConfig) => {
     connectConfigs.push(config);
 
@@ -181,7 +185,7 @@ describe("/api/sandbox lifecycle kicks", () => {
       lifecycleVersion: 3,
       sandboxState: { type: "vercel" },
       vercelProjectId: "project-1",
-      vercelProjectName: "open-harness-web",
+      vercelProjectName: "open-agents-web",
       vercelTeamId: "team-1",
       globalSkillRefs: [],
     };
