@@ -58,6 +58,7 @@ import {
 import { CheckRunsList } from "@/components/merge-check-runs";
 import {
   MERGE_READINESS_POLL_INTERVAL_MS,
+  shouldIncrementMergeReadinessTransientPollCount,
   shouldPollMergeReadiness,
 } from "@/lib/merge-readiness-polling";
 import { cn } from "@/lib/utils";
@@ -70,6 +71,7 @@ import {
 } from "@/lib/git-flow-client";
 import type { SessionGitStatus } from "@/hooks/use-session-git-status";
 import { useSessionFiles } from "@/hooks/use-session-files";
+import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status";
 import { useGitPanel } from "./git-panel-context";
 import { FileTree } from "./file-tree";
 import { useSessionChatWorkspaceContext } from "./session-chat-context";
@@ -272,6 +274,42 @@ function DiffFileList({
 }
 
 /* ------------------------------------------------------------------ */
+/* GitHub connection warning banner                                     */
+/* ------------------------------------------------------------------ */
+
+function GitHubConnectionWarning({
+  status,
+  reconnectRequired,
+}: {
+  status: string | null;
+  reconnectRequired: boolean;
+}) {
+  if (reconnectRequired) {
+    return (
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+        Your GitHub connection needs to be refreshed.{" "}
+        {/* oxlint-disable-next-line nextjs/no-html-link-for-pages */}
+        <a href="/settings/connections" className="underline">
+          Reconnect
+        </a>
+      </div>
+    );
+  }
+  if (status === "not_connected") {
+    return (
+      <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
+        Connect GitHub to push changes.{" "}
+        {/* oxlint-disable-next-line nextjs/no-html-link-for-pages */}
+        <a href="/settings/connections" className="underline">
+          Go to settings
+        </a>
+      </div>
+    );
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
 /* Inline commit panel (replaces the commit dialog)                    */
 /* ------------------------------------------------------------------ */
 
@@ -283,6 +321,8 @@ function InlineCommitPanel({
   onCommitted,
   isAgentWorking,
   baseBranch,
+  connectionStatus,
+  reconnectRequired,
 }: {
   session: Session;
   hasSandbox: boolean;
@@ -291,6 +331,8 @@ function InlineCommitPanel({
   onCommitted?: () => void;
   isAgentWorking: boolean;
   baseBranch: string;
+  connectionStatus: string | null;
+  reconnectRequired: boolean;
 }) {
   const [commitMessage, setCommitMessage] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
@@ -426,6 +468,10 @@ function InlineCommitPanel({
   if (needsNewBranch) {
     return (
       <div className="space-y-2">
+        <GitHubConnectionWarning
+          status={connectionStatus}
+          reconnectRequired={reconnectRequired}
+        />
         <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
           {isDetachedHead
             ? "Detached HEAD — create a branch first."
@@ -469,6 +515,10 @@ function InlineCommitPanel({
   // Commit form
   const commitForm = (
     <div className="space-y-2">
+      <GitHubConnectionWarning
+        status={connectionStatus}
+        reconnectRequired={reconnectRequired}
+      />
       {isExpanded && (
         <div className="relative">
           <Textarea
@@ -599,6 +649,8 @@ function InlinePrCreatePanel({
   onGitMessage,
   isAgentWorking,
   baseBranch,
+  connectionStatus,
+  reconnectRequired,
 }: {
   session: Session;
   hasSandbox: boolean;
@@ -612,6 +664,8 @@ function InlinePrCreatePanel({
   onGitMessage?: (message: WebAgentUIMessage) => Promise<void> | void;
   isAgentWorking: boolean;
   baseBranch: string;
+  connectionStatus: string | null;
+  reconnectRequired: boolean;
 }) {
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
@@ -627,7 +681,6 @@ function InlinePrCreatePanel({
   const [isCreatingBranch, setIsCreatingBranch] = useState(false);
   const [resolvedBranch, setResolvedBranch] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [prHeadOwner, setPrHeadOwner] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [enableAutoMerge, setEnableAutoMerge] = useState(false);
 
@@ -640,21 +693,6 @@ function InlinePrCreatePanel({
   const displayBranch = currentBranch === "HEAD" ? baseBranch : currentBranch;
   const isDetachedHead = gitStatus?.isDetachedHead ?? false;
   const needsNewBranch = displayBranch === baseBranch || isDetachedHead;
-
-  const normalizedRepoOwner = session.repoOwner?.toLowerCase() ?? null;
-  const normalizedHeadOwner = prHeadOwner?.toLowerCase() ?? null;
-  const shouldOpenCompareInsteadOfApi = Boolean(
-    normalizedRepoOwner &&
-    normalizedHeadOwner &&
-    normalizedHeadOwner !== normalizedRepoOwner,
-  );
-  const canEnableAutoMerge = !shouldOpenCompareInsteadOfApi;
-
-  useEffect(() => {
-    if (!canEnableAutoMerge) {
-      setEnableAutoMerge(false);
-    }
-  }, [canEnableAutoMerge]);
 
   const handleCreateBranch = async () => {
     if (!hasSandbox) return;
@@ -695,9 +733,6 @@ function InlinePrCreatePanel({
       });
       setPrTitle(generated.title ?? session.title);
       setPrBody(generated.body ?? "");
-      if (generated.prHeadOwner) {
-        setPrHeadOwner(generated.prHeadOwner);
-      }
       if (generated.branchName && generated.branchName !== "HEAD") {
         setResolvedBranch(generated.branchName);
       }
@@ -731,9 +766,6 @@ function InlinePrCreatePanel({
           });
           finalTitle = generated.title ?? session.title;
           finalBody = finalBody || (generated.body ?? "");
-          if (generated.prHeadOwner) {
-            setPrHeadOwner(generated.prHeadOwner);
-          }
           if (generated.branchName && generated.branchName !== "HEAD") {
             setResolvedBranch(generated.branchName);
           }
@@ -756,45 +788,6 @@ function InlinePrCreatePanel({
         ],
       });
 
-      // Check if we need to open compare page instead
-      const headOwner = prHeadOwner?.trim() || session.repoOwner;
-      const ownerMismatch =
-        headOwner &&
-        session.repoOwner &&
-        headOwner.toLowerCase() !== session.repoOwner.toLowerCase();
-
-      if (ownerMismatch && session.repoOwner && session.repoName) {
-        const headRef = `${headOwner}:${displayBranch}`;
-        const compareUrl = new URL(
-          `https://github.com/${session.repoOwner}/${session.repoName}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(headRef)}`,
-        );
-        compareUrl.searchParams.set("expand", "1");
-        if (finalTitle) compareUrl.searchParams.set("title", finalTitle);
-        if (finalBody) compareUrl.searchParams.set("body", finalBody);
-        window.open(compareUrl.toString(), "_blank", "noopener,noreferrer");
-        setPrSuccess({
-          prUrl: compareUrl.toString(),
-          requiresManualCreation: true,
-        });
-        await onGitMessage?.({
-          id: gitMessageId,
-          role: "assistant",
-          metadata: {},
-          parts: [
-            {
-              type: "data-pr",
-              id: prPartId,
-              data: {
-                status: "success",
-                url: compareUrl.toString(),
-                requiresManualCreation: true,
-              },
-            },
-          ],
-        });
-        return;
-      }
-
       const res = await fetch("/api/pr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -805,7 +798,6 @@ function InlinePrCreatePanel({
           title: finalTitle,
           body: finalBody,
           baseBranch,
-          headOwner: prHeadOwner ?? undefined,
           isDraft,
           enableAutoMerge: !isDraft && enableAutoMerge,
         }),
@@ -927,6 +919,10 @@ function InlinePrCreatePanel({
 
     const branchContent = (
       <div className="space-y-2">
+        <GitHubConnectionWarning
+          status={connectionStatus}
+          reconnectRequired={reconnectRequired}
+        />
         <div className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground">
           {isDetachedHead
             ? "Detached HEAD — create a branch first."
@@ -992,6 +988,10 @@ function InlinePrCreatePanel({
   // PR creation form
   const prForm = (
     <div className="space-y-2">
+      <GitHubConnectionWarning
+        status={connectionStatus}
+        reconnectRequired={reconnectRequired}
+      />
       {isExpanded && (
         <>
           <div className="relative">
@@ -1027,15 +1027,13 @@ function InlinePrCreatePanel({
             <div className="space-y-0.5 pr-3">
               <p className="text-xs font-medium">Auto-merge</p>
               <p className="text-[10px] text-muted-foreground">
-                {shouldOpenCompareInsteadOfApi
-                  ? "Unavailable for compare page flow."
-                  : "Merge automatically once checks pass."}
+                Merge automatically once checks pass.
               </p>
             </div>
             <Switch
               checked={enableAutoMerge}
               onCheckedChange={setEnableAutoMerge}
-              disabled={isAgentWorking || isCreatingPr || !canEnableAutoMerge}
+              disabled={isAgentWorking || isCreatingPr}
             />
           </div>
         </>
@@ -1147,7 +1145,7 @@ function InlineMergePanel({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forceConfirming, setForceConfirming] = useState(false);
-  const [emptyChecksPollCount, setEmptyChecksPollCount] = useState(0);
+  const [transientPollCount, setTransientPollCount] = useState(0);
 
   const readinessRequestIdRef = useRef(0);
   const forceConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -1208,7 +1206,7 @@ function InlineMergePanel({
   }, [session.id]);
 
   useEffect(() => {
-    setEmptyChecksPollCount(0);
+    setTransientPollCount(0);
   }, [session.prNumber]);
 
   // Load readiness on mount
@@ -1220,21 +1218,22 @@ function InlineMergePanel({
   }, [loadReadiness]);
 
   useEffect(() => {
+    if (!shouldIncrementMergeReadinessTransientPollCount(readiness)) {
+      setTransientPollCount(0);
+    }
+  }, [readiness]);
+
+  useEffect(() => {
     if (
       isLoadingReadiness ||
-      !shouldPollMergeReadiness({ readiness, emptyChecksPollCount })
+      !shouldPollMergeReadiness({ readiness, transientPollCount })
     ) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      if (
-        readiness &&
-        readiness.checks.pending === 0 &&
-        readiness.checks.requiredTotal === 0 &&
-        readiness.checkRuns.length === 0
-      ) {
-        setEmptyChecksPollCount((currentCount) => currentCount + 1);
+      if (shouldIncrementMergeReadinessTransientPollCount(readiness)) {
+        setTransientPollCount((currentCount) => currentCount + 1);
       }
       void loadReadiness();
     }, MERGE_READINESS_POLL_INTERVAL_MS);
@@ -1242,7 +1241,7 @@ function InlineMergePanel({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [emptyChecksPollCount, isLoadingReadiness, loadReadiness, readiness]);
+  }, [isLoadingReadiness, loadReadiness, readiness, transientPollCount]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -1694,6 +1693,8 @@ export function GitPanel(props: GitPanelProps) {
     isAgentWorking,
   } = props;
   const { refreshFiles } = useSessionChatWorkspaceContext();
+  const { status: connectionStatus, reconnectRequired } =
+    useGitHubConnectionStatus({ enabled: hasRepo });
   const [baseBranch, setBaseBranch] = useState("main");
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [discardTarget, setDiscardTarget] = useState<{
@@ -1938,21 +1939,28 @@ export function GitPanel(props: GitPanelProps) {
         )}
       >
         {gitPanelTab === "files" && (
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {filesLoading ? (
-              <div className="flex w-full flex-col items-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 py-8 text-center">
-                <p className="text-xs text-muted-foreground">Loading files…</p>
+              <div className="p-3">
+                <div className="flex w-full flex-col items-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 py-8 text-center">
+                  <p className="text-xs text-muted-foreground">
+                    Loading files…
+                  </p>
+                </div>
               </div>
             ) : sessionFiles && sessionFiles.length > 0 ? (
               <FileTree
                 files={sessionFiles}
+                repoName={session.repoName}
                 onFileClick={(filePath) => openFileTab(filePath)}
               />
             ) : (
-              <div className="flex w-full flex-col items-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 py-8 text-center">
-                <p className="text-xs text-muted-foreground">
-                  {!hasSandbox ? "Waiting for sandbox…" : "No files found"}
-                </p>
+              <div className="p-3">
+                <div className="flex w-full flex-col items-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 py-8 text-center">
+                  <p className="text-xs text-muted-foreground">
+                    {!hasSandbox ? "Waiting for sandbox…" : "No files found"}
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -1972,6 +1980,8 @@ export function GitPanel(props: GitPanelProps) {
                     onCommitted={onCommitted}
                     isAgentWorking={isAgentWorking}
                     baseBranch={baseBranch}
+                    connectionStatus={connectionStatus}
+                    reconnectRequired={reconnectRequired}
                   />
                 </div>
               )}
@@ -2166,6 +2176,8 @@ export function GitPanel(props: GitPanelProps) {
                 onGitMessage={onGitMessage}
                 isAgentWorking={isAgentWorking}
                 baseBranch={baseBranch}
+                connectionStatus={connectionStatus}
+                reconnectRequired={reconnectRequired}
               />
             ) : (
               <div className="text-center text-xs text-muted-foreground py-6">
